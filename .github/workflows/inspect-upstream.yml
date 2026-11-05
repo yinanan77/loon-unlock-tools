@@ -1,0 +1,31 @@
+name: Inspect original node query
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-upstream.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read original query source
+        run: |
+          curl --fail --location --max-time 30 -A 'Loon/1005' 'https://kelee.one/Resource/JavaScript/Node_detection_tool/NodeUnlockDetection.js' -o /tmp/original.js
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text=Path('/tmp/original.js').read_text()
+          print('SOURCE_BYTES',len(text))
+          ranges=[(0,min(2500,len(text)))]
+          for m in re.finditer(r'ChatGPT|YouTube|\\$done|nodeInfo|persistentStore',text):
+              ranges.append((max(0,m.start()-900),min(len(text),m.end()+1800)))
+          merged=[]
+          for a,b in sorted(ranges):
+              if merged and a<=merged[-1][1]: merged[-1]=(merged[-1][0],max(b,merged[-1][1]))
+              else: merged.append((a,b))
+          for a,b in merged:
+              print('SOURCE_RANGE',a,b)
+              print(text[a:b])
+          PY
