@@ -3,19 +3,19 @@
  * 参考作者：XIAO_KOP、keywos、dcpengx。
  * 修正：地区判断、验证页面、非目标 HTML 均不能作为支持结果。
  * 后台检测版：不下载远程 JS，不依据节点名称判断。
- * Loon 脚本标签“实测解锁后台检测”负责扫描；预览/导出仅读取 1 小时内的检测结果。
+ * Loon 脚本标签“实测解锁后台检测”负责扫描；只在手动入口检测尚无记录的节点；结果长期保存，预览和旧定时入口均不检测。
  */
 async function operator(proxies = []) {
   const $ = $substore;
   if (!$.env || !$.env.isLoon) throw new Error('请使用 Loon 内运行的 Sub-Store 后端');
-  const cache = scriptResourceCache;
+  const legacyCache = typeof scriptResourceCache === 'undefined' ? null : scriptResourceCache;
   const entry = typeof $script !== 'undefined' ? $script.name : '未取得Loon脚本标签';
-  const scanning = ['实测解锁后台检测', '立即检测解锁节点'].includes(entry);
+  const scanning = entry === '立即检测解锁节点';
   const started = Date.now();
   const browserUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1';
-  $.info('[实测解锁] 版本=v5，入口=' + entry + '，模式=' + (scanning ? '后台检测' : '读取缓存'));
+  $.info('[实测解锁] 版本=v6，入口=' + entry + '，模式=' + (scanning ? '仅检测新增节点' : '读取长期结果'));
   const passed = new Array(proxies.length).fill(false);
-  const summary = { passed: 0, unsupported: 0, error: 0, missing: 0, expired: 0 };
+  const summary = { passed: 0, unsupported: 0, error: 0, missing: 0, reused: 0, migrated: 0, tested: 0 };
   const reasons = {};
   let cursor = 0, completed = 0;
   function errorText(error, node) {
@@ -87,17 +87,41 @@ async function operator(proxies = []) {
     try { node = ProxyUtils.produce([proxy], 'Loon'); }
     catch (_) { summary.error++; $.info('[实测解锁] ' + proxy.name + '：节点转换失败'); return; }
     if (typeof node !== 'string' || !node.trim()) { summary.error++; $.info('[实测解锁] ' + proxy.name + '：当前 Loon 不支持此节点描述'); return; }
-    const key = 'yc-unlock:result:v5:' + ProxyUtils.hex_md5(node);
-    const saved = cache.get(key);
-    if (!scanning) {
-      const fresh = !!saved && Number.isFinite(saved.time) && Date.now() >= saved.time && Date.now() - saved.time < 3600000;
-      passed[index] = fresh && saved.ok === true;
-      if (passed[index]) summary.passed++;
-      else if (!saved) summary.missing++;
-      else if (!fresh) summary.expired++;
-      else summary[saved.state === 'unsupported' ? 'unsupported' : 'error']++;
+    // 名称、订阅归属、显示元数据不改变出口配置的身份。
+    const identity = Object.fromEntries(Object.entries(proxy)
+      .filter(([k]) => !/^(name|collectionName|subName|id|_.*)$/i.test(k))
+      .sort(([a], [b]) => a.localeCompare(b)));
+    const key = '#yc-unlock:once:v1:' + ProxyUtils.hex_md5(JSON.stringify(identity));
+    let saved;
+    const raw = $.read(key);
+    if (raw != null && raw !== '') {
+      try { saved = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+      catch (_) { throw new Error('长期检测记录损坏，停止处理，未自动重测'); }
+      if (!saved || saved.schema !== 1 || !['passed', 'unsupported', 'error'].includes(saved.state)) {
+        throw new Error('长期检测记录格式错误，停止处理，未自动重测');
+      }
+    }
+    // 接收仍在旧缓存中的同一套严格网页检测记录，避免升级后再测一次。
+    if (!saved && legacyCache) {
+      for (const version of ['v5', 'v4']) {
+        const old = legacyCache.get('yc-unlock:result:' + version + ':' + ProxyUtils.hex_md5(node));
+        if (old && ['passed', 'unsupported', 'error'].includes(old.state)
+          && old.chatgpt && old.youtube) {
+          saved = { ...old, schema: 1, migratedFrom: version };
+          $.write(JSON.stringify(saved), key);
+          summary.migrated++;
+          break;
+        }
+      }
+    }
+    if (saved) {
+      passed[index] = saved.ok === true && saved.state === 'passed';
+      summary[passed[index] ? 'passed' : saved.state === 'unsupported' ? 'unsupported' : 'error']++;
+      summary.reused++;
       return;
     }
+    if (!scanning) { summary.missing++; return; }
+    summary.tested++;
     const results = await Promise.all([chatgpt(node), youtube(node)]);
     const ok = results.every(item => item.state === 'passed');
     const kind = ok ? 'passed' : results.some(item => item.state === 'error') ? 'error' : 'unsupported';
@@ -109,7 +133,7 @@ async function operator(proxies = []) {
         reasons[label] = (reasons[label] || 0) + 1;
       }
     }
-    cache.set(key, { ok, state: kind, time: Date.now(), chatgpt: results[0], youtube: results[1] }, 3600000);
+    $.write(JSON.stringify({ schema: 1, ok, state: kind, time: Date.now(), chatgpt: results[0], youtube: results[1] }), key);
     $.info('[实测解锁] ' + proxy.name + '：ChatGPT=' + results[0].state + '(' + results[0].reason + ')；YouTube=' + results[1].state + '(' + results[1].reason + ')');
   }
   async function worker() {
@@ -122,7 +146,7 @@ async function operator(proxies = []) {
       }
     }
   }
-  if (scanning) $.info('[实测解锁] 开始检测 ' + proxies.length + ' 个节点；4 个节点并发，每项请求10秒，连接异常最多重试1次');
+  if (scanning) $.info('[实测解锁] 开始检测 ' + proxies.length + ' 个节点的记录，仅请求从未检测的节点；4 个节点并发，连接异常最多重试1次');
   await Promise.all(Array.from({ length: Math.min(4, proxies.length) }, worker));
   const output = proxies.filter((_, i) => passed[i]).map(p => ({
     ...p, name: '[实测] ' + (p._subName ? p._subName + '｜' : '') + p.name
@@ -130,6 +154,6 @@ async function operator(proxies = []) {
   $.info('[实测解锁] 通过 ' + output.length + '/' + proxies.length);
   $.info('[实测解锁] 汇总=' + JSON.stringify(summary));
   if (scanning) $.info('[实测解锁] 原因统计=' + JSON.stringify(Object.fromEntries(Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 8))));
-  if (!output.length) throw new Error(scanning ? '检测完成：没有节点同时通过两项检测，请查看日志' : '没有有效检测结果：请先在 Loon 运行“实测解锁后台检测”，完成后再预览');
+  if (!output.length) throw new Error(scanning ? '检测完成：长期记录中没有同时通过两项检测的节点，请查看日志；不会自动重测' : '长期记录中没有通过节点；若汇总 missing 大于0，请手动运行一次“立即检测解锁节点”，只检测新增节点');
   return output;
 }

@@ -5,7 +5,7 @@ const assert = require('assert/strict');
 const source = fs.readFileSync(__dirname + '/AI_YouTube_RealCheck.js', 'utf8');
 
 async function test() {
-  const values = new Map(), calls = [], logs = [], attempts = new Map();
+  const values = new Map(), durable = new Map(), calls = [], logs = [], attempts = new Map();
   let active = 0, maximumActive = 0;
   const app = '<title>ChatGPT</title><script>window.__reactRouterContext={}</script>';
   const premium = '<title>YouTube Premium</title><script>var ytInitialData={};</script>';
@@ -35,6 +35,7 @@ async function test() {
     },
     $substore: {
       env: { isLoon: true }, info: text => logs.push(text),
+      read: key => durable.get(key), write: (value, key) => durable.set(key, value),
       wait: async delay => assert.equal(delay, 500),
       http: { get: async o => {
         active++;
@@ -64,16 +65,16 @@ async function test() {
   };
   vm.createContext(context);
   vm.runInContext(source, context);
-  const proxies = Object.keys(fixtures).map(id => ({ id, name: '美国 GPT 解锁 同名节点', _subName: 'sample' }));
+  const proxies = Object.keys(fixtures).map(id => ({ id, server: id + '.invalid', port: 443, type: 'ss', name: '美国 GPT 解锁 同名节点', _subName: 'sample' }));
   // 旧版本错误的成功缓存不允许混入新输出。
   values.set('yc-unlock:result:v3:' + context.ProxyUtils.hex_md5('descriptor:regionOnly'), { ok: true, time: Date.now() });
   values.set('yc-unlock:result:v4:' + context.ProxyUtils.hex_md5('descriptor:regionOnly'), { ok: true, time: Date.now() });
-  await assert.rejects(context.operator(proxies), /先在 Loon/);
+  await assert.rejects(context.operator(proxies), /新增节点/);
   assert.equal(calls.length, 0);
   context.$script.name = '立即检测解锁节点';
   let output = await context.operator(proxies);
   assert.deepEqual(Array.from(output, p => p.id), ['good', 'retrySuccess']);
-  assert.equal(values.size, proxies.length + 2);
+  assert.equal(durable.size, proxies.length);
   assert(logs.some(l => l.includes('网站验证')));
   assert(logs.some(l => l.includes('汇总=')));
   assert(logs.some(l => l.includes('原因统计=') && l.includes('TLS_HANDSHAKE_FAILED') && l.includes('ECONNRESET')));
@@ -89,21 +90,51 @@ async function test() {
   output = await context.operator(proxies);
   assert.deepEqual(Array.from(output, p => p.id), ['good', 'retrySuccess']);
   assert.equal(calls.length, before, '预览不能重新检测');
-  for (const v of values.values()) v.time = Date.now() - 3600001;
-  await assert.rejects(context.operator(proxies), /没有有效检测结果/);
-  assert.equal(calls.length, before);
-  context.$script.name = '实测解锁后台检测';
-  await context.operator(proxies);
+  // 重启并经过很久仍然使用长期记录，不重新检测。
+  for (const [key, raw] of durable) {
+    const record = JSON.parse(raw); record.time = 1; durable.set(key, JSON.stringify(record));
+  }
+  context.$script.name = '立即检测解锁节点';
   goodBlocked = true;
   output = await context.operator(proxies);
-  assert.deepEqual(Array.from(output, p => p.id), ['retrySuccess']);
-  context.$script.name = 'Sub-Store Core';
+  assert.deepEqual(Array.from(output, p => p.id), ['good', 'retrySuccess']);
+  assert.equal(calls.length, before, '重复手动执行也不能重测旧节点');
+  context.$script.name = '实测解锁后台检测';
   output = await context.operator(proxies);
-  assert.deepEqual(Array.from(output, p => p.id), ['retrySuccess']);
-  await assert.rejects(context.operator(proxies.filter(p => p.id === 'broken')), /没有有效检测结果/);
+  assert.equal(calls.length, before, '旧定时入口不能再检测');
+  const renamed = proxies.map(p => ({ ...p, name: '新名字', _subName: '新显示归属' }));
+  await context.operator(renamed);
+  assert.equal(calls.length, before, '改名不应该重测');
+  // 同一旧定时入口遇到新节点，也只能读取，不能发起检测。
+  fixtures.added = () => ({ chat: app, yt: premium });
+  const added = { id: 'added', server: 'added.invalid', port: 443, type: 'ss', name: '新增节点' };
+  await context.operator([...proxies, added]);
+  assert.equal(calls.length, before);
+  context.$script.name = '立即检测解锁节点';
+  output = await context.operator([...proxies, added]);
+  assert.equal(calls.length, before + 2, '新增节点只新增两项服务检测');
+  assert.deepEqual(Array.from(output, p => p.id), ['good', 'retrySuccess', 'added']);
+  // 删除的节点不会继续混入输出。
+  context.$script.name = 'Sub-Store Core';
+  output = await context.operator([added]);
+  assert.deepEqual(Array.from(output, p => p.id), ['added']);
+  // 一次检测失败也长期保留，不会每次预览/手动点击再试。
+  await assert.rejects(context.operator(proxies.filter(p => p.id === 'broken')), /没有通过节点/);
+  // 升级接收已有 v4 严格判定，避免把已经检测过的节点重测一次。
+  fixtures.legacy = () => { throw new Error('不应发起检测'); };
+  const legacy = { id: 'legacy', server: 'legacy.invalid', port: 443, type: 'ss', name: '旧结果' };
+  values.set('yc-unlock:result:v4:' + context.ProxyUtils.hex_md5('descriptor:legacy'), {
+    ok: true, state: 'passed', time: 1, chatgpt: { state: 'passed' }, youtube: { state: 'passed' }
+  });
+  const preMigration = calls.length;
+  output = await context.operator([legacy]);
+  assert.deepEqual(Array.from(output, p => p.id), ['legacy']);
+  values.clear();
+  output = await context.operator([legacy]);
+  assert.equal(calls.length, preMigration, '迁移后清空旧缓存不会丢长期结果');
   context.$substore.env.isLoon = false;
   await assert.rejects(context.operator(proxies), /Loon/);
   assert(calls.every(o => !o.url.includes('kelee.one')));
-  console.log('PASS: 响应判定、v3/v4缓存隔离、错误详情与脱敏、连接异常仅重试一次、重试恢复、请求头、进度与原因统计、后台/只读分离、过期与失效排除。');
+  console.log('PASS: 严格响应判定、请求错误与脱敏、有限重试、长期结果不过期、重复手动不重测、旧定时不检测、新增仅测新增、改名不重测、删除不混入、迁移旧结果、清缓存不丢记录。');
 }
 test().catch(error => { console.error(error); process.exitCode = 1; });

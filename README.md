@@ -1,44 +1,34 @@
-# Loon 实测节点筛选
+# Loon 一次检测，长期保留
 
-用于 Loon 内运行的 Sub-Store。逐个指定节点出口检测 ChatGPT 和 YouTube Premium，同时通过才进入输出。逐节点请求的思路参考可莉 NodeUnlockDetection.js（XIAO_KOP、keywos、dcpengx），判定逻辑已增加严格响应检查。不根据节点名称判断支持情况，也不依赖运行时下载检测 JS。
+用于 Loon 内运行的 Sub-Store。按真实节点出口检测 ChatGPT 网页和 YouTube Premium 页面，两项同时通过才输出。节点名称不参与能力判断。
 
-## 远程地址
+## v6 的行为
 
-- Sub-Store 脚本：https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/AI_YouTube_RealCheck.js
-- Loon 后台插件：https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/UnlockBackground.lpx
+- 首次手动运行“立即检测解锁节点”检测尚无记录的节点；连接异常最多重试一次属于同一次检测任务。
+- 每个出口配置的结果写入 Loon 持久化存储，不使用有时效的脚本缓存。成功、明确受限和检测异常均长期记录，重复运行不自动重测。
+- 预览、订阅更新、导出和旧的定时入口只读取记录，不发起节点检测。尚无记录的节点暂不输出。
+- 新增订阅后手动运行一次，只检测新增且无记录的节点。节点服务器、凭据等连接配置改变也按新节点处理；改名不重测。
+- 已删除的节点不再输出。现有 v4/v5 严格检测缓存中仍能读取的记录会迁移，避免升级时重测；已经被清理的旧缓存无法恢复。
+- 结果固定意味着不会自动追踪后续解锁变化，检测异常也不会自动重试。需要重新判定时应另行明确操作；本版不提供自动重测。
+- 持久化记录仍属于本机数据，卸载 Loon 或删除其数据会丢失。输出链接仍是手机本地 Sub-Store 地址。
 
-## 使用
+## 安装
 
-1. 在 Sub-Store 将所需订阅组成一个组合订阅，其内部「名称」设为 `节点筛选`。显示名称可以自行修改。
-2. 为该组合订阅添加「脚本操作」，类型选「链接」，填入本仓库 `AI_YouTube_RealCheck.js` 的 GitHub Raw 地址。
-   当前 v5 链接：`https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/AI_YouTube_RealCheck.js?v=5`。版本参数用于避开旧脚本下载缓存。
-3. 在 Loon 安装本仓库 `UnlockBackground.lpx` 的 Raw 地址。若主配置已有同名后台脚本，先移除重复项。
-4. 在 Loon 手动执行「立即检测解锁节点」。保持 Loon 运行，在日志看到检测完成后，再打开组合订阅预览。
-5. 从 Sub-Store 复制此组合订阅的 Loon 格式输出地址，用于实际的策略组接入。
+1. 组合订阅内部名称为“节点筛选”。脚本操作链接使用：
+   `https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/AI_YouTube_RealCheck.js?v=6`
+2. 更新现有后台插件：
+   `https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/UnlockBackground.lpx?v=6`
+   此插件只保留手动入口，已删除 cron。若主配置另有同名手动入口，保留一处即可。
+3. 若主配置还残留旧定时入口，v6 会把它当作只读操作。加载新版脚本前仍在运行的旧任务不会被本次发布自动终止。
+4. 现有记录迁移后可直接预览；只有汇总 missing 大于 0 时才需手动运行检测。首次全量扫描仍可能耗时数分钟，不要在运行时重复点击。
+5. Loon 输出地址：
+   `https://sub.store/download/collection/%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89?target=Loon`
+   接入既有 AI 策略组，无须创建新策略组。
 
-GitHub 仓库地址不等于 Sub-Store 的节点输出地址。脚本托管在 GitHub，检测和节点输出仍在手机本地完成。本仓库不需要私人订阅 URL、token 或证书。
+## 检测边界和验证
 
-## 耗时与缓存
+验证页、HTTP 错误、非目标页面均不当作通过。检测异常不等于不支持。网页判定不保证登录后全部功能可用。
 
-- 后台脚本使用 Sub-Store 官方 `cron-sync-artifacts.min.js`，指定组合订阅运行，Loon 执行时限 900 秒。
-- 手动脚本标签为「立即检测解锁节点」，定时脚本标签为「实测解锁后台检测」。检测 JS 根据 Loon `$script.name` 识别后台入口；更改这两个标签时必须同步修改 JS。
-- 后台每半小时重测并保存每个节点的通过/未通过结果。预览和导出仅读取一小时内有效的成功结果，不发起逐节点检测。
-- 无有效结果时明确报错，不混入未经检测的节点。订阅源自身的下载仍需要网络访问。
-- v5 使用 4 个节点并发（每节点两项请求），补齐 ChatGPT 请求的浏览器请求头。每项请求 10 秒，连接异常最多重试 1 次，收到验证页或 HTTP 错误不自动重试。降低并发与补齐请求头是兼容性调整，尚不能据此认定已解决实机连接异常。
-- v5 每完成 10 个节点记录一次进度，最后输出 `原因统计=`。原生请求错误保留错误代码、消息和耗时，隐藏 URL、节点描述及常见凭据字段；不输出网页响应体。v4 缓存隔离，过期结果单独计数。
-- 在 Sub-Store「我的 → 缓存配置 → 最大保存日志条数」设为 200 可记录诊断日志。当前原生连接错误的具体根因需要 v5 实机错误详情确认。
-- iOS 后台调度、节点数量、请求排队和网络状态可能影响完成时间。查看 Loon/Sub-Store 日志确认实际运行情况。
+`node test.cjs` 验证长期保存、增量检测、禁用旧定时扫描、改名/删除行为、旧结果迁移、错误脱敏及严格响应判定；手机本地接入和网络结果仍需实机验证。
 
-## 检测边界与验证
-
-ChatGPT 检测必须取得并识别 ChatGPT 主站网页，地区代码不再作为成功依据。YouTube 检测必须取得并识别英文 Premium 页面。验证页、403、异常HTML和连接错误均不会入选。日志区分明确受限和检测异常；受浏览器验证影响，检测异常不等于该节点永久不支持。两项网页检查也不等于登录账号后全部功能可用。旧版v3缓存已隔离，更新后必须先执行一次后台检测。
-
-已完成本地回归测试（包括错误页200、验证页200、403、地区信息假阳性、旧缓存污染和出口绑定）；尚未在用户的 Loon/Sub-Store 中端到端验证。尤其需要实机确认后台标签传入脚本，以及首次检测成功后预览只读取缓存。
-
-运行 `node test.cjs` 进行模拟检查。
-
-参考：
-
-- https://kelee.one/Resource/JavaScript/Node_detection_tool/NodeUnlockDetection.js
-- https://sub-store-org.github.io/doc/subscription/overview
-- https://nsloon.app/docs/Script/script_api/
+本仓库不保存私人订阅、凭据或证书。

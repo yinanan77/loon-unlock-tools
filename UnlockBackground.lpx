@@ -1,7 +1,6 @@
 #!name=实测解锁后台检测
-#!desc=配合 Sub-Store 中内部名称为“节点筛选”的组合订阅。先配置 AI_YouTube_RealCheck.js，再手动执行“立即检测解锁节点”。每半小时重测一次，预览和导出只读取一小时内的检测结果。
+#!desc=配合 Sub-Store 中内部名称为“节点筛选”的组合订阅。配合 v6 脚本，手动执行“立即检测解锁节点”只检测尚无记录的节点。结果长期保存；预览不检测，无定时重测。
 #!author=Codex
 
 [Script]
 generic script-path=https://github.com/sub-store-org/Sub-Store/releases/latest/download/cron-sync-artifacts.min.js,timeout=900,tag=立即检测解锁节点,argument="col=%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89"
-cron "0,30 * * * *" script-path=https://github.com/sub-store-org/Sub-Store/releases/latest/download/cron-sync-artifacts.min.js,timeout=900,tag=实测解锁后台检测,argument="col=%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89"
