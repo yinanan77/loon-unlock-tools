@@ -5,7 +5,7 @@ const assert = require('assert/strict');
 const source = fs.readFileSync(__dirname + '/AI_YouTube_RealCheck.js', 'utf8');
 
 async function test() {
-  const values = new Map(), durable = new Map(), calls = [], logs = [], attempts = new Map();
+  const values = new Map(), durable = new Map(), calls = [], logs = [], attempts = new Map(), displays = [];
   let active = 0, maximumActive = 0;
   const app = '<title>ChatGPT</title><script>window.__reactRouterContext={}</script>';
   const premium = '<title>YouTube Premium</title><script>var ytInitialData={};</script>';
@@ -35,6 +35,7 @@ async function test() {
     },
     $substore: {
       env: { isLoon: true }, info: text => logs.push(text),
+      done: value => displays.push(value),
       read: key => durable.get(key), write: (value, key) => durable.set(key, value),
       wait: async delay => assert.equal(delay, 500),
       http: { get: async o => {
@@ -75,6 +76,9 @@ async function test() {
   let output = await context.operator(proxies);
   assert.deepEqual(Array.from(output, p => p.id), ['good', 'retrySuccess']);
   assert.equal(durable.size, proxies.length);
+  context.$substore.done();
+  assert.match(displays.at(-1).content, /通过：2/);
+  assert.match(displays.at(-1).content, /本次新检测：/);
   assert(logs.some(l => l.includes('网站验证')));
   assert(logs.some(l => l.includes('汇总=')));
   assert(logs.some(l => l.includes('原因统计=') && l.includes('TLS_HANDSHAKE_FAILED') && l.includes('ECONNRESET')));
@@ -99,6 +103,9 @@ async function test() {
   output = await context.operator(proxies);
   assert.deepEqual(Array.from(output, p => p.id), ['good', 'retrySuccess']);
   assert.equal(calls.length, before, '重复手动执行也不能重测旧节点');
+  context.$substore.done();
+  assert.match(displays.at(-1).content, /本次新检测：0/);
+  assert.equal(displays.length, 2, '完成回调只能调用一次');
   context.$script.name = '实测解锁后台检测';
   output = await context.operator(proxies);
   assert.equal(calls.length, before, '旧定时入口不能再检测');

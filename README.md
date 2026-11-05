@@ -15,9 +15,9 @@
 ## 安装
 
 1. 组合订阅内部名称为“节点筛选”。脚本操作链接使用：
-   `https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/AI_YouTube_RealCheck.js?v=6`
+   `https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/AI_YouTube_RealCheck.js?v=6.1`
 2. 更新现有后台插件：
-   `https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/UnlockBackground.lpx?v=6`
+   `https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/UnlockBackground.lpx?v=6.1`
    此插件只保留手动入口，已删除 cron。若主配置另有同名手动入口，保留一处即可。
 3. 若主配置还残留旧定时入口，v6 会把它当作只读操作。加载新版脚本前仍在运行的旧任务不会被本次发布自动终止。
 4. 现有记录迁移后可直接预览；只有汇总 missing 大于 0 时才需手动运行检测。首次全量扫描仍可能耗时数分钟，不要在运行时重复点击。
@@ -32,3 +32,7 @@
 `node test.cjs` 验证长期保存、增量检测、禁用旧定时扫描、改名/删除行为、旧结果迁移、错误脱敏及严格响应判定；手机本地接入和网络结果仍需实机验证。
 
 本仓库不保存私人订阅、凭据或证书。
+
+## v6.1 结果弹窗
+
+手动检测上下文包装 Sub-Store 的完成回调，返回 Loon Generic 支持的 title/content。显示已处理、通过、明确受限、检测异常、本次新检测及复用数量；不改 HTTP 预览/导出的返回格式。沿用 v6 的长期记录，更新不会清空结果。仅进入 operator 后能安装此显示回调，下载或加载 operator 之前的错误仍须查看 Loon 原生日志。

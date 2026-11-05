@@ -13,11 +13,29 @@ async function operator(proxies = []) {
   const scanning = entry === '立即检测解锁节点';
   const started = Date.now();
   const browserUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1';
-  $.info('[实测解锁] 版本=v6，入口=' + entry + '，模式=' + (scanning ? '仅检测新增节点' : '读取长期结果'));
+  $.info('[实测解锁] 版本=v6.1，入口=' + entry + '，模式=' + (scanning ? '仅检测新增节点' : '读取长期结果'));
   const passed = new Array(proxies.length).fill(false);
   const summary = { passed: 0, unsupported: 0, error: 0, missing: 0, reused: 0, migrated: 0, tested: 0 };
   const reasons = {};
   let cursor = 0, completed = 0;
+  // 官方后台入口以 $.done() 结束，没有提供 Generic 弹窗内容。
+  // 仅在手动扫描上下文补上最终显示结果，HTTP 导出响应不改动。
+  if (scanning && typeof $.done === 'function') {
+    const finish = $._ycUnlockOriginalDone || $.done.bind($);
+    $._ycUnlockOriginalDone = finish;
+    $.done = function () {
+      return finish({
+        title: '节点筛选执行结束',
+        content: '已处理：' + completed + '/' + proxies.length +
+          '\n通过：' + summary.passed +
+          '\n明确受限：' + summary.unsupported +
+          '\n检测异常：' + summary.error +
+          '\n本次新检测：' + summary.tested +
+          '\n复用记录：' + summary.reused +
+          '\n结果长期保存；检测异常不代表不支持。'
+      });
+    };
+  }
   function errorText(error, node) {
     let raw;
     if (typeof error === 'string') raw = error;
