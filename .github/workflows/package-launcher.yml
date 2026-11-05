@@ -1,0 +1,41 @@
+name: Package one-time Loon launcher
+on:
+  push:
+    paths:
+      - '.github/workflows/package-launcher.yml'
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned official task and verify checksum
+        run: |
+          curl --fail --location --retry 2 --max-time 90 'https://github.com/sub-store-org/Sub-Store/releases/download/2.44.4/cron-sync-artifacts.min.js' -o /tmp/official-task.js
+          echo '3d67972ecbfc7def795c7fbb18751a0be587eb287920406fc26dda0ca9170b7f  /tmp/official-task.js' | sha256sum --check
+      - name: Embed task into launcher
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('RunOnce.js')
+          text=p.read_text()
+          start=text.index('  try {\n    const cached = $persistentStore.read(sourceKey);')
+          assert text.endswith('})();')
+          official=Path('/tmp/official-task.js').read_text()
+          p.write_text(text[:start]+'  run('+json.dumps(official,ensure_ascii=True)+', false);\n})();')
+          plugin=Path('UnlockBackground.lpx')
+          plugin.write_text(plugin.read_text().replace('RunOnce.js?v=1','RunOnce.js?v=2'))
+          PY
+          node --check RunOnce.js
+          node test.cjs
+      - name: Publish bundled launcher
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RunOnce.js UnlockBackground.lpx
+          git diff --cached --quiet && exit 0
+          git commit -m 'Embed checksum-verified Sub-Store task; remove runtime release download'
+          git push
