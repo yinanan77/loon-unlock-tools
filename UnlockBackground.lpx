@@ -3,4 +3,4 @@
 #!author=Codex
 
 [Script]
-generic then script("https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/RunOnce.js?v=1", "col=%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89") with tag="立即检测解锁节点", img_url="checkmark.shield.system", timeout=900
+generic then script("https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/RunOnce.js?v=2", "col=%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89") with tag="立即检测解锁节点", img_url="checkmark.shield.system", timeout=900
