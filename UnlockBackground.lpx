@@ -1,6 +1,6 @@
 #!name=实测解锁后台检测
-#!desc=配合 Sub-Store 中名称为“节点筛选”的组合订阅及 v6.1 脚本。检测一次，长期保存；新增节点才检测，完成后显示结果摘要，无定时重测。
+#!desc=一次检测并长期保存。手动入口直接显示结果或错误；新增节点才检测，无定时重测。Sub-Store 组合名称须为“节点筛选”，使用 v6.1 检测脚本。
 #!author=Codex
 
 [Script]
-generic then script("https://github.com/sub-store-org/Sub-Store/releases/latest/download/cron-sync-artifacts.min.js", "col=%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89") with tag="立即检测解锁节点", img_url="checkmark.shield.system", timeout=900
+generic then script("https://raw.githubusercontent.com/yinanan77/loon-unlock-tools/main/RunOnce.js?v=1", "col=%E8%8A%82%E7%82%B9%E7%AD%9B%E9%80%89") with tag="立即检测解锁节点", img_url="checkmark.shield.system", timeout=900
